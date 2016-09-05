@@ -1,3 +1,6 @@
+to build, run: scons
+to test: run test.sh
+
 ####################################################################################
 # Copyright 2011. All rights reserved.                                             #
 # Institute of Measurement and Control Systems                                     #

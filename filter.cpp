@@ -13,9 +13,12 @@ namespace filter {
 
 using namespace simdpp;
 
+static const int SIZE16 = SIMDPP_FAST_INT16_SIZE;
+static const int SIZE8 = SIMDPP_FAST_INT8_SIZE;
+
 void check_width(int w)
 {
-  CHECK(w % SIMDPP_FAST_INT8_SIZE == 0) << "width must be multiple of "<<SIMDPP_FAST_INT8_SIZE;
+  CHECK(w % SIZE8 == 0) << "width must be multiple of "<<SIZE8;
 }
 // private namespace, public user functions at the bottom of this file
 namespace detail {
@@ -59,51 +62,50 @@ void pack_16bit_to_8bit_saturate( const __m128i a0, const __m128i a1, __m128i& b
 // output is scaled by 1/128, then clamped to [-128,128], and finally shifted to [0,255].
 void convolve_14641_row_5x5_16bit( const int16_t* in, uint8_t* out, int w, int h ) {
   check_width(w);
-  const __m128i* i0 = (const __m128i*)(in);
-  const int16_t* i1 = in+1;
-  const int16_t* i2 = in+2;
-  const int16_t* i3 = in+3;
-  const int16_t* i4 = in+4;
+  const int16_t *i0 = in, *i1 = in+1, *i2 = in+2, *i3 = in+3, *i4 = in+4;
   uint8_t* result   = out + 2;
-  const int16_t* const end_input = in + w*h;
-  __m128i offs = _mm_set1_epi16( 128 );
-  for( ; i4 < end_input; i0 += 1, i1 += 8, i2 += 8, i3 += 8, i4 += 8, result += 16 ) {
-    __m128i result_register_lo;
-    __m128i result_register_hi;
+  const int16_t* end_input = in + w*h;
+  int16x8 offs = make_int(128);
+  for( ; i4 < end_input; i0 += 8, i1 += 8, i2 += 8, i3 += 8, i4 += 8, result += 16 ) {
+    __m128i ret_lo;
+    __m128i ret_hi;
     for( int i=0; i<2; i++ ) {
-      __m128i* result_register;
-      if( i==0 ) result_register = &result_register_lo;
-      else       result_register = &result_register_hi;
-      __m128i i0_register = *i0;
+      __m128i* ret;
+      if( i==0 )
+        ret = &ret_lo;
+      else
+        ret = &ret_hi;
+
+      __m128i i0_register = _mm_loadu_si128((__m128i*)i0);
       __m128i i1_register = _mm_loadu_si128( (__m128i*)( i1 ) );
       __m128i i2_register = _mm_loadu_si128( (__m128i*)( i2 ) );
       __m128i i3_register = _mm_loadu_si128( (__m128i*)( i3 ) );
       __m128i i4_register = _mm_loadu_si128( (__m128i*)( i4 ) );
-      *result_register = _mm_setzero_si128();
-      *result_register = _mm_add_epi16( i0_register, *result_register );
+      *ret = _mm_setzero_si128();
+      *ret = _mm_add_epi16( i0_register, *ret );
       i1_register      = _mm_add_epi16( i1_register, i1_register  );
       i1_register      = _mm_add_epi16( i1_register, i1_register  );
-      *result_register = _mm_add_epi16( i1_register, *result_register );
+      *ret = _mm_add_epi16( i1_register, *ret );
       i2_register      = _mm_add_epi16( i2_register, i2_register  );
-      *result_register = _mm_add_epi16( i2_register, *result_register );
+      *ret = _mm_add_epi16( i2_register, *ret );
       i2_register      = _mm_add_epi16( i2_register, i2_register  );
-      *result_register = _mm_add_epi16( i2_register, *result_register );
+      *ret = _mm_add_epi16( i2_register, *ret );
       i3_register      = _mm_add_epi16( i3_register, i3_register  );
       i3_register      = _mm_add_epi16( i3_register, i3_register  );
-      *result_register = _mm_add_epi16( i3_register, *result_register );
-      *result_register = _mm_add_epi16( i4_register, *result_register );
-      *result_register = _mm_srai_epi16( *result_register, 7 );
-      *result_register = _mm_add_epi16( *result_register, offs );
+      *ret = _mm_add_epi16( i3_register, *ret );
+      *ret = _mm_add_epi16( i4_register, *ret );
+      *ret = _mm_srai_epi16( *ret, 7 );
+      *ret = _mm_add_epi16( *ret, offs );
       if( i==0 ) {
-        i0 += 1;
+        i0 += 8;
         i1 += 8;
         i2 += 8;
         i3 += 8;
         i4 += 8;
       }
     }
-    pack_16bit_to_8bit_saturate( result_register_lo, result_register_hi, result_register_lo );
-    _mm_storeu_si128( ((__m128i*)( result )), result_register_lo );
+    pack_16bit_to_8bit_saturate( ret_lo, ret_hi, ret_lo );
+    _mm_storeu_si128( ((__m128i*)( result )), ret_lo );
   }
 }
 
@@ -120,25 +122,25 @@ void convolve_12021_row_5x5_16bit( const int16_t* in, uint8_t* out, int w, int h
   const int16_t* const end_input = in + w*h;
   __m128i offs = _mm_set1_epi16( 128 );
   for( ; i4 < end_input; i0 += 1, i1 += 8, i3 += 8, i4 += 8, result += 16 ) {
-    __m128i result_register_lo;
-    __m128i result_register_hi;
+    __m128i ret_lo;
+    __m128i ret_hi;
     for( int i=0; i<2; i++ ) {
-      __m128i* result_register;
-      if( i==0 ) result_register = &result_register_lo;
-      else       result_register = &result_register_hi;
+      __m128i* ret;
+      if( i==0 ) ret = &ret_lo;
+      else       ret = &ret_hi;
       __m128i i0_register = *i0;
       __m128i i1_register = _mm_loadu_si128( (__m128i*)( i1 ) );
       __m128i i3_register = _mm_loadu_si128( (__m128i*)( i3 ) );
       __m128i i4_register = _mm_loadu_si128( (__m128i*)( i4 ) );
-      *result_register = _mm_setzero_si128();
-      *result_register = _mm_add_epi16( i0_register,   *result_register );
+      *ret = _mm_setzero_si128();
+      *ret = _mm_add_epi16( i0_register,   *ret );
       i1_register      = _mm_add_epi16( i1_register, i1_register  );
-      *result_register = _mm_add_epi16( i1_register,   *result_register );
+      *ret = _mm_add_epi16( i1_register,   *ret );
       i3_register      = _mm_add_epi16( i3_register, i3_register  );
-      *result_register = _mm_sub_epi16( *result_register, i3_register );
-      *result_register = _mm_sub_epi16( *result_register, i4_register );
-      *result_register = _mm_srai_epi16( *result_register, 7 );
-      *result_register = _mm_add_epi16( *result_register, offs );
+      *ret = _mm_sub_epi16( *ret, i3_register );
+      *ret = _mm_sub_epi16( *ret, i4_register );
+      *ret = _mm_srai_epi16( *ret, 7 );
+      *ret = _mm_add_epi16( *ret, offs );
       if( i==0 ) {
         i0 += 1;
         i1 += 8;
@@ -146,8 +148,8 @@ void convolve_12021_row_5x5_16bit( const int16_t* in, uint8_t* out, int w, int h
         i4 += 8;
       }
     }
-    pack_16bit_to_8bit_saturate( result_register_lo, result_register_hi, result_register_lo );
-    _mm_storeu_si128( ((__m128i*)( result )), result_register_lo );
+    pack_16bit_to_8bit_saturate( ret_lo, ret_hi, ret_lo );
+    _mm_storeu_si128( ((__m128i*)( result )), ret_lo );
   }
 }
 
@@ -163,19 +165,19 @@ void convolve_121_row_3x3_16bit( const int16_t* in, uint8_t* out, int w, int h )
   const size_t blocked_loops = (w*h-2)/16;
   __m128i offs = _mm_set1_epi16( 128 );
   for( size_t i=0; i != blocked_loops; i++ ) {
-    __m128i result_register_lo;
-    __m128i result_register_hi;
+    __m128i ret_lo;
+    __m128i ret_hi;
     __m128i i1_register;
     __m128i i2_register;
 
     i1_register        = _mm_loadu_si128( (__m128i*)( i1 ) );
     i2_register        = _mm_loadu_si128( (__m128i*)( i2 ) );
-    result_register_lo = *i0;
+    ret_lo = *i0;
     i1_register        = _mm_add_epi16( i1_register, i1_register );
-    result_register_lo = _mm_add_epi16( i1_register, result_register_lo );
-    result_register_lo = _mm_add_epi16( i2_register, result_register_lo );
-    result_register_lo = _mm_srai_epi16( result_register_lo, 2 );
-    result_register_lo = _mm_add_epi16( result_register_lo, offs );
+    ret_lo = _mm_add_epi16( i1_register, ret_lo );
+    ret_lo = _mm_add_epi16( i2_register, ret_lo );
+    ret_lo = _mm_srai_epi16( ret_lo, 2 );
+    ret_lo = _mm_add_epi16( ret_lo, offs );
 
     i0++;
     i1+=8;
@@ -183,19 +185,19 @@ void convolve_121_row_3x3_16bit( const int16_t* in, uint8_t* out, int w, int h )
 
     i1_register        = _mm_loadu_si128( (__m128i*)( i1 ) );
     i2_register        = _mm_loadu_si128( (__m128i*)( i2 ) );
-    result_register_hi = *i0;
+    ret_hi = *i0;
     i1_register        = _mm_add_epi16( i1_register, i1_register );
-    result_register_hi = _mm_add_epi16( i1_register, result_register_hi );
-    result_register_hi = _mm_add_epi16( i2_register, result_register_hi );
-    result_register_hi = _mm_srai_epi16( result_register_hi, 2 );
-    result_register_hi = _mm_add_epi16( result_register_hi, offs );
+    ret_hi = _mm_add_epi16( i1_register, ret_hi );
+    ret_hi = _mm_add_epi16( i2_register, ret_hi );
+    ret_hi = _mm_srai_epi16( ret_hi, 2 );
+    ret_hi = _mm_add_epi16( ret_hi, offs );
 
     i0++;
     i1+=8;
     i2+=8;
 
-    pack_16bit_to_8bit_saturate( result_register_lo, result_register_hi, result_register_lo );
-    _mm_storeu_si128( ((__m128i*)( result )), result_register_lo );
+    pack_16bit_to_8bit_saturate( ret_lo, ret_hi, ret_lo );
+    _mm_storeu_si128( ((__m128i*)( result )), ret_lo );
 
     result += 16;
   }
@@ -213,30 +215,30 @@ void convolve_101_row_3x3_16bit( const int16_t* in, uint8_t* out, int w, int h )
   const size_t blocked_loops = (w*h-2)/16;
   __m128i offs = _mm_set1_epi16( 128 );
   for( size_t i=0; i != blocked_loops; i++ ) {
-    __m128i result_register_lo;
-    __m128i result_register_hi;
+    __m128i ret_lo;
+    __m128i ret_hi;
     __m128i i2_register;
 
     i2_register = _mm_loadu_si128( (__m128i*)( i2 ) );
-    result_register_lo  = *i0;
-    result_register_lo  = _mm_sub_epi16( result_register_lo, i2_register );
-    result_register_lo  = _mm_srai_epi16( result_register_lo, 2 );
-    result_register_lo  = _mm_add_epi16( result_register_lo, offs );
+    ret_lo  = *i0;
+    ret_lo  = _mm_sub_epi16( ret_lo, i2_register );
+    ret_lo  = _mm_srai_epi16( ret_lo, 2 );
+    ret_lo  = _mm_add_epi16( ret_lo, offs );
 
     i0 += 1;
     i2 += 8;
 
     i2_register = _mm_loadu_si128( (__m128i*)( i2 ) );
-    result_register_hi  = *i0;
-    result_register_hi  = _mm_sub_epi16( result_register_hi, i2_register );
-    result_register_hi  = _mm_srai_epi16( result_register_hi, 2 );
-    result_register_hi  = _mm_add_epi16( result_register_hi, offs );
+    ret_hi  = *i0;
+    ret_hi  = _mm_sub_epi16( ret_hi, i2_register );
+    ret_hi  = _mm_srai_epi16( ret_hi, 2 );
+    ret_hi  = _mm_add_epi16( ret_hi, offs );
 
     i0 += 1;
     i2 += 8;
 
-    pack_16bit_to_8bit_saturate( result_register_lo, result_register_hi, result_register_lo );
-    _mm_storeu_si128( ((__m128i*)( result )), result_register_lo );
+    pack_16bit_to_8bit_saturate( ret_lo, ret_hi, ret_lo );
+    _mm_storeu_si128( ((__m128i*)( result )), ret_lo );
 
     result += 16;
   }
@@ -337,7 +339,7 @@ void convolve_row_p1p1p0m1m1_5x5(const int16_t* in, int16_t* out, int w, int h) 
   const auto* end_input = in + w*h;
   auto* result = out + 2;
 
-  for(; i4+8 < end_input; i0 += 1, i1 += SIMDPP_FAST_INT16_SIZE, i3 += SIMDPP_FAST_INT16_SIZE, i4 += SIMDPP_FAST_INT16_SIZE, result += SIMDPP_FAST_INT16_SIZE ) {
+  for(; i4+SIZE16 < end_input; i0 += SIZE16, i1 += SIZE16, i3 += SIZE16, i4 += SIZE16, result += SIZE16 ) {
     int16x8 ret, v_i0 = load(i0), v_i1 = load(i1), v_i3 = load(i3), v_i4 = load(i4);
     ret = simdpp::add(ret, v_i0);
     ret = simdpp::add(ret, v_i1);
@@ -357,7 +359,7 @@ void convolve_cols_3x3( const uint8_t* in, int16_t* out_v, int16_t* out_h, int w
   auto *result_v_ = (int16x8*)(out_v + w);
   auto zero_ = make_int(0);
 
-  for( ; i2 != end_input; i0 += SIMDPP_FAST_INT8_SIZE, i1 += SIMDPP_FAST_INT8_SIZE, i2 += SIMDPP_FAST_INT8_SIZE, result_h_+=2, result_v_+=2 ) {
+  for( ; i2 != end_input; i0 += 16, i1 += 16, i2 += 16, result_h_+=2, result_v_+=2 ) {
     result_h_[0] = zero_;
     result_h_[1] = zero_;
     result_v_[0] = zero_;
