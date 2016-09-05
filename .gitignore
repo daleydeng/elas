@@ -1,0 +1,7 @@
+elas
+.*
+*.o
+*.a
+*.so
+*.os
+!.gitignore
