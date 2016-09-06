@@ -26,6 +26,7 @@ Street, Fifth Floor, Boston, MA 02110-1301, USA
 #include "descriptor.h"
 #include "triangle.h"
 #include "matrix.h"
+#include "common.hh"
 
 using namespace std;
 
@@ -51,15 +52,9 @@ void Elas::process (uint8_t* I1_,uint8_t* I2_,float* D1,float* D2,const int32_t*
     }
   }
 
-#ifdef PROFILE
-  timer.start("Descriptor");
-#endif
   Descriptor desc1(I1,width,height,bpl,param.subsampling);
   Descriptor desc2(I2,width,height,bpl,param.subsampling);
 
-#ifdef PROFILE
-  timer.start("Support Matches");
-#endif
   vector<support_pt> p_support = computeSupportMatches(desc1.I_desc,desc2.I_desc);
 
   // if not enough support points for triangulation
@@ -70,21 +65,11 @@ void Elas::process (uint8_t* I1_,uint8_t* I2_,float* D1,float* D2,const int32_t*
     return;
   }
 
-#ifdef PROFILE
-  timer.start("Delaunay Triangulation");
-#endif
   vector<triangle> tri_1 = computeDelaunayTriangulation(p_support,0);
   vector<triangle> tri_2 = computeDelaunayTriangulation(p_support,1);
 
-#ifdef PROFILE
-  timer.start("Disparity Planes");
-#endif
   computeDisparityPlanes(p_support,tri_1,0);
   computeDisparityPlanes(p_support,tri_2,1);
-
-#ifdef PROFILE
-  timer.start("Grid");
-#endif
 
   // allocate memory for disparity grid
   int32_t grid_width   = (int32_t)ceil((float)width/(float)param.grid_size);
@@ -96,52 +81,30 @@ void Elas::process (uint8_t* I1_,uint8_t* I2_,float* D1,float* D2,const int32_t*
   createGrid(p_support,disparity_grid_1,grid_dims,0);
   createGrid(p_support,disparity_grid_2,grid_dims,1);
 
-#ifdef PROFILE
-  timer.start("Matching");
-#endif
   computeDisparity(p_support,tri_1,disparity_grid_1,grid_dims,desc1.I_desc,desc2.I_desc,0,D1);
   computeDisparity(p_support,tri_2,disparity_grid_2,grid_dims,desc1.I_desc,desc2.I_desc,1,D2);
 
-#ifdef PROFILE
-  timer.start("L/R Consistency Check");
-#endif
   leftRightConsistencyCheck(D1,D2);
 
-#ifdef PROFILE
-  timer.start("Remove Small Segments");
-#endif
   removeSmallSegments(D1);
   if (!param.postprocess_only_left)
     removeSmallSegments(D2);
 
-#ifdef PROFILE
-  timer.start("Gap Interpolation");
-#endif
   gapInterpolation(D1);
   if (!param.postprocess_only_left)
     gapInterpolation(D2);
 
   if (param.filter_adaptive_mean) {
-#ifdef PROFILE
-    timer.start("Adaptive Mean");
-#endif
     adaptiveMean(D1);
     if (!param.postprocess_only_left)
       adaptiveMean(D2);
   }
 
   if (param.filter_median) {
-#ifdef PROFILE
-    timer.start("Median");
-#endif
     median(D1);
     if (!param.postprocess_only_left)
       median(D2);
   }
-
-#ifdef PROFILE
-  timer.plot();
-#endif
 
   // release memory
   free(disparity_grid_1);
@@ -658,27 +621,6 @@ void Elas::createGrid(vector<support_pt> p_support,int32_t* disparity_grid,int32
   free(temp2);
 }
 
-inline void Elas::updatePosteriorMinimum(__m128i* I2_block_addr,const int32_t &d,const int32_t &w,
-                                         const __m128i &xmm1,__m128i &xmm2,int32_t &val,int32_t &min_val,int32_t &min_d) {
-  xmm2 = _mm_load_si128(I2_block_addr);
-  xmm2 = _mm_sad_epu8(xmm1,xmm2);
-  val  = _mm_extract_epi16(xmm2,0)+_mm_extract_epi16(xmm2,4)+w;
-  if (val<min_val) {
-    min_val = val;
-    min_d   = d;
-  }
-}
-
-inline void Elas::updatePosteriorMinimum(__m128i* I2_block_addr,const int32_t &d,
-                                         const __m128i &xmm1,__m128i &xmm2,int32_t &val,int32_t &min_val,int32_t &min_d) {
-  xmm2 = _mm_load_si128(I2_block_addr);
-  xmm2 = _mm_sad_epu8(xmm1,xmm2);
-  val  = _mm_extract_epi16(xmm2,0)+_mm_extract_epi16(xmm2,4);
-  if (val<min_val) {
-    min_val = val;
-    min_d   = d;
-  }
-}
 
 inline void Elas::findMatch(int32_t &u,int32_t &v,float &plane_a,float &plane_b,float &plane_c,
                             int32_t* disparity_grid,int32_t *grid_dims,uint8_t* I1_desc,uint8_t* I2_desc,
@@ -745,14 +687,14 @@ inline void Elas::findMatch(int32_t &u,int32_t &v,float &plane_a,float &plane_b,
         u_warp = u-d_curr;
         if (u_warp<window_size || u_warp>=width-window_size)
           continue;
-        updatePosteriorMinimum((__m128i*)(I2_line_addr+16*u_warp),d_curr,xmm1,xmm2,val,min_val,min_d);
+        elas::updatePosteriorMinimum(I2_line_addr+16*u_warp,d_curr,&xmm1,&xmm2,val,min_val,min_d);
       }
     }
     for (d_curr=d_plane_min; d_curr<=d_plane_max; d_curr++) {
       u_warp = u-d_curr;
       if (u_warp<window_size || u_warp>=width-window_size)
         continue;
-      updatePosteriorMinimum((__m128i*)(I2_line_addr+16*u_warp),d_curr,valid?*(P+abs(d_curr-d_plane)):0,xmm1,xmm2,val,min_val,min_d);
+      elas::updatePosteriorMinimum(I2_line_addr+16*u_warp,d_curr,valid?*(P+abs(d_curr-d_plane)):0,&xmm1,&xmm2,val,min_val,min_d);
     }
 
   // right image
@@ -763,14 +705,14 @@ inline void Elas::findMatch(int32_t &u,int32_t &v,float &plane_a,float &plane_b,
         u_warp = u+d_curr;
         if (u_warp<window_size || u_warp>=width-window_size)
           continue;
-        updatePosteriorMinimum((__m128i*)(I2_line_addr+16*u_warp),d_curr,xmm1,xmm2,val,min_val,min_d);
+        elas::updatePosteriorMinimum((I2_line_addr+16*u_warp),d_curr,&xmm1,&xmm2,val,min_val,min_d);
       }
     }
     for (d_curr=d_plane_min; d_curr<=d_plane_max; d_curr++) {
       u_warp = u+d_curr;
       if (u_warp<window_size || u_warp>=width-window_size)
         continue;
-      updatePosteriorMinimum((__m128i*)(I2_line_addr+16*u_warp),d_curr,valid?*(P+abs(d_curr-d_plane)):0,xmm1,xmm2,val,min_val,min_d);
+      elas::updatePosteriorMinimum(I2_line_addr+16*u_warp,d_curr,valid?*(P+abs(d_curr-d_plane)):0,&xmm1,&xmm2,val,min_val,min_d);
     }
   }
 

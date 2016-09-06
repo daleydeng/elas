@@ -7,4 +7,4 @@ env.Append(
     LIBS=['glog']
 )
 
-Program("elas", Glob("*.cpp"))
+Program("elas", Glob("*.cpp")+Glob('*.cc'))

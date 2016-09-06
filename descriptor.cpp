@@ -20,7 +20,7 @@ Street, Fifth Floor, Boston, MA 02110-1301, USA
 */
 
 #include "descriptor.h"
-#include "filter.hh"
+#include "common.hh"
 #include <emmintrin.h>
 
 using namespace std;
@@ -29,7 +29,7 @@ Descriptor::Descriptor(uint8_t* I,int32_t width,int32_t height,int32_t bpl,bool 
   I_desc        = (uint8_t*)_mm_malloc(16*width*height*sizeof(uint8_t),16);
   uint8_t* I_du = (uint8_t*)_mm_malloc(bpl*height*sizeof(uint8_t),16);
   uint8_t* I_dv = (uint8_t*)_mm_malloc(bpl*height*sizeof(uint8_t),16);
-  filter::sobel3x3(I,I_du,I_dv,bpl,height);
+  elas::sobel3x3(I,I_du,I_dv,bpl,height);
   createDescriptor(I_du,I_dv,width,height,bpl,half_resolution);
   _mm_free(I_du);
   _mm_free(I_dv);
