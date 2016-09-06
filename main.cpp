@@ -22,7 +22,7 @@ Street, Fifth Floor, Boston, MA 02110-1301, USA
 // Demo program showing how libelas can be used, try "./elas -h" for help
 
 #include <iostream>
-#include "elas.h"
+#include "elas.hh"
 #include "image.h"
 
 using namespace std;

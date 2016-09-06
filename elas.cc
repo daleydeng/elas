@@ -1,41 +1,29 @@
-/*
-Copyright 2011. All rights reserved.
-Institute of Measurement and Control Systems
-Karlsruhe Institute of Technology, Germany
+#include "elas.hh"
 
-This file is part of libelas.
-Authors: Andreas Geiger
-
-libelas is free software; you can redistribute it and/or modify it under the
-terms of the GNU General Public License as published by the Free Software
-Foundation; either version 3 of the License, or any later version.
-
-libelas is distributed in the hope that it will be useful, but WITHOUT ANY
-WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE. See the GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License along with
-libelas; if not, write to the Free Software Foundation, Inc., 51 Franklin
-Street, Fifth Floor, Boston, MA 02110-1301, USA
-*/
-
-#include "elas.h"
-
+#include <Eigen/Dense>
 #include <algorithm>
 #include <math.h>
 #include <simdpp/simd.h>
 #include "descriptor.hh"
 #include "triangle.h"
-#include "matrix.h"
 #include "common.hh"
 
 namespace elas {
 
 using std::vector;
+using Eigen::Matrix3d;
+using Eigen::Vector3d;
 using simdpp::load;
 using simdpp::uint8x16;
 using simdpp::float32x4;
 using simdpp::make_float;
+
+template<typename T>
+double cond_number(const T &svd)
+{
+  return svd.singularValues()(0)
+      / svd.singularValues()(svd.singularValues().size()-1);
+}
 
 void Elas::process (uint8_t* I1_,uint8_t* I2_,float* D1,float* D2,const int32_t* dims){
 
@@ -472,10 +460,9 @@ vector<Elas::triangle> Elas::computeDelaunayTriangulation (vector<support_pt> p_
 void Elas::computeDisparityPlanes (vector<support_pt> p_support,vector<triangle> &tri,int32_t right_image) {
 
   // init matrices
-  Matrix A(3,3);
-  Matrix b(3,1);
+  Matrix3d A;
+  Vector3d b;
 
-  // for all triangles do
   for (int32_t i=0; i<(int)tri.size(); i++) {
 
     // get triangle corner indices
@@ -483,61 +470,26 @@ void Elas::computeDisparityPlanes (vector<support_pt> p_support,vector<triangle>
     int32_t c2 = tri[i].c2;
     int32_t c3 = tri[i].c3;
 
-    // compute matrix A for linear system of left triangle
-    A.val[0][0] = p_support[c1].u;
-    A.val[1][0] = p_support[c2].u;
-    A.val[2][0] = p_support[c3].u;
-    A.val[0][1] = p_support[c1].v; A.val[0][2] = 1;
-    A.val[1][1] = p_support[c2].v; A.val[1][2] = 1;
-    A.val[2][1] = p_support[c3].v; A.val[2][2] = 1;
+    A << p_support[c1].u, p_support[c1].v, 1,
+        p_support[c2].u, p_support[c2].v, 1,
+        p_support[c3].u, p_support[c3].v, 1;
 
-    // compute vector b for linear system (containing the disparities)
-    b.val[0][0] = p_support[c1].d;
-    b.val[1][0] = p_support[c2].d;
-    b.val[2][0] = p_support[c3].d;
+    b << p_support[c1].d, p_support[c2].d, p_support[c3].d;
 
-    // on success of gauss jordan elimination
-    if (b.solve(A)) {
+    Vector3d X = A.lu().solve(b);
+    tri[i].t1a = X(0);
+    tri[i].t1b = X(1);
+    tri[i].t1c = X(2);
 
-      // grab results from b
-      tri[i].t1a = b.val[0][0];
-      tri[i].t1b = b.val[1][0];
-      tri[i].t1c = b.val[2][0];
+    A << p_support[c1].u - p_support[c1].d, p_support[c1].v, 1,
+        p_support[c2].u - p_support[c2].d, p_support[c2].v, 1,
+        p_support[c3].u - p_support[c3].d, p_support[c3].v, 1;
 
-    // otherwise: invalid
-    } else {
-      tri[i].t1a = 0;
-      tri[i].t1b = 0;
-      tri[i].t1c = 0;
-    }
+    X = A.lu().solve(b);
 
-    // compute matrix A for linear system of right triangle
-    A.val[0][0] = p_support[c1].u-p_support[c1].d;
-    A.val[1][0] = p_support[c2].u-p_support[c2].d;
-    A.val[2][0] = p_support[c3].u-p_support[c3].d;
-    A.val[0][1] = p_support[c1].v; A.val[0][2] = 1;
-    A.val[1][1] = p_support[c2].v; A.val[1][2] = 1;
-    A.val[2][1] = p_support[c3].v; A.val[2][2] = 1;
-
-    // compute vector b for linear system (containing the disparities)
-    b.val[0][0] = p_support[c1].d;
-    b.val[1][0] = p_support[c2].d;
-    b.val[2][0] = p_support[c3].d;
-
-    // on success of gauss jordan elimination
-    if (b.solve(A)) {
-
-      // grab results from b
-      tri[i].t2a = b.val[0][0];
-      tri[i].t2b = b.val[1][0];
-      tri[i].t2c = b.val[2][0];
-
-    // otherwise: invalid
-    } else {
-      tri[i].t2a = 0;
-      tri[i].t2b = 0;
-      tri[i].t2c = 0;
-    }
+    tri[i].t2a = X(0);
+    tri[i].t2b = X(1);
+    tri[i].t2c = X(2);
   }
 }
 
