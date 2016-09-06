@@ -1,42 +1,20 @@
-/*
-Copyright 2011. All rights reserved.
-Institute of Measurement and Control Systems
-Karlsruhe Institute of Technology, Germany
-
-This file is part of libelas.
-Authors: Andreas Geiger
-
-libelas is free software; you can redistribute it and/or modify it under the
-terms of the GNU General Public License as published by the Free Software
-Foundation; either version 3 of the License, or any later version.
-
-libelas is distributed in the hope that it will be useful, but WITHOUT ANY
-WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE. See the GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License along with
-libelas; if not, write to the Free Software Foundation, Inc., 51 Franklin
-Street, Fifth Floor, Boston, MA 02110-1301, USA
-*/
-
-#include "descriptor.h"
+#include "descriptor.hh"
 #include "common.hh"
-#include <emmintrin.h>
 
-using namespace std;
+namespace elas {
 
 Descriptor::Descriptor(uint8_t* I,int32_t width,int32_t height,int32_t bpl,bool half_resolution) {
-  I_desc        = (uint8_t*)_mm_malloc(16*width*height*sizeof(uint8_t),16);
-  uint8_t* I_du = (uint8_t*)_mm_malloc(bpl*height*sizeof(uint8_t),16);
-  uint8_t* I_dv = (uint8_t*)_mm_malloc(bpl*height*sizeof(uint8_t),16);
+  I_desc        = (uint8_t*)aligned_alloc(SIZE8, 16*width*height*sizeof(uint8_t));
+  uint8_t* I_du = (uint8_t*)aligned_alloc(SIZE8, bpl*height*sizeof(uint8_t));
+  uint8_t* I_dv = (uint8_t*)aligned_alloc(SIZE8, bpl*height*sizeof(uint8_t));
   elas::sobel3x3(I,I_du,I_dv,bpl,height);
   createDescriptor(I_du,I_dv,width,height,bpl,half_resolution);
-  _mm_free(I_du);
-  _mm_free(I_dv);
+  free(I_du);
+  free(I_dv);
 }
 
 Descriptor::~Descriptor() {
-  _mm_free(I_desc);
+  free(I_desc);
 }
 
 void Descriptor::createDescriptor (uint8_t* I_du,uint8_t* I_dv,int32_t width,int32_t height,int32_t bpl,bool half_resolution) {
@@ -112,3 +90,5 @@ void Descriptor::createDescriptor (uint8_t* I_du,uint8_t* I_dv,int32_t width,int
   }
 
 }
+
+} // namespace elas

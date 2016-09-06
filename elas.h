@@ -51,7 +51,7 @@ public:
       // default settings in a robotics environment
       // (do not produce results in half-occluded areas
       //  and are a bit more robust towards lighting etc.)
-      if (s==ROBOTICS) {
+      if (s == ROBOTICS) {
         disp_min              = 0;
         disp_max              = 255;
         support_threshold     = 0.85;

@@ -12,6 +12,9 @@ namespace elas {
 
 using namespace simdpp;
 
+const int SIZE16 = SIMDPP_FAST_INT16_SIZE;
+const int SIZE8 = SIMDPP_FAST_INT8_SIZE;
+
 namespace {
 
 std::ostream &operator <<(std::ostream& os, const __m128i &v)
@@ -22,9 +25,6 @@ std::ostream &operator <<(std::ostream& os, const __m128i &v)
     os << " " << (int)vv[i];
   return os;
 }
-
-static const int SIZE16 = SIMDPP_FAST_INT16_SIZE;
-static const int SIZE8 = SIMDPP_FAST_INT8_SIZE;
 
 template<typename T>
 static T simd_mul2(const T &v)
@@ -186,10 +186,13 @@ void convolve_cols_3x3( const uint8_t* in, int16_t* out_v, int16_t* out_h, int w
 void sobel3x3( const uint8_t* in, uint8_t* out_v, uint8_t* out_h, int w, int h ) {
   check_width(w);
   std::vector<int16_t, aligned_allocator<int16_t, SIZE8> > temp_h(w*h), temp_v(w*h);
-  int16_t *ph = &temp_h[0], *pv = &temp_v[0];
+  auto *ph = (int16_t*) aligned_alloc(SIZE8, w*h*sizeof(int16_t)),
+      *pv = (int16_t*) aligned_alloc(SIZE8, w*h*sizeof(int16_t));
   convolve_cols_3x3(in, pv, ph, w, h);
   convolve_101_row_3x3_16bit(pv, out_v, w, h);
   convolve_121_row_3x3_16bit(ph, out_h, w, h);
+  free(ph);
+  free(pv);
 }
 
 int sad_u8(const void *a, const void *b)

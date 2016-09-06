@@ -24,7 +24,7 @@ Street, Fifth Floor, Boston, MA 02110-1301, USA
 #include <algorithm>
 #include <math.h>
 #include <simdpp/simd.h>
-#include "descriptor.h"
+#include "descriptor.hh"
 #include "triangle.h"
 #include "matrix.h"
 #include "common.hh"
@@ -34,6 +34,8 @@ namespace elas {
 using std::vector;
 using simdpp::load;
 using simdpp::uint8x16;
+using simdpp::float32x4;
+using simdpp::make_float;
 
 void Elas::process (uint8_t* I1_,uint8_t* I2_,float* D1,float* D2,const int32_t* dims){
 
@@ -43,8 +45,8 @@ void Elas::process (uint8_t* I1_,uint8_t* I2_,float* D1,float* D2,const int32_t*
   bpl    = width + 15-(width-1)%16;
 
   // copy images to byte aligned memory
-  I1 = (uint8_t*)_mm_malloc(bpl*height*sizeof(uint8_t),16);
-  I2 = (uint8_t*)_mm_malloc(bpl*height*sizeof(uint8_t),16);
+  I1 = (uint8_t*)aligned_alloc(SIZE8, bpl*height*sizeof(uint8_t));
+  I2 = (uint8_t*)aligned_alloc(SIZE8, bpl*height*sizeof(uint8_t));
   memset (I1,0,bpl*height*sizeof(uint8_t));
   memset (I2,0,bpl*height*sizeof(uint8_t));
   if (bpl==dims[2]) {
@@ -63,10 +65,10 @@ void Elas::process (uint8_t* I1_,uint8_t* I2_,float* D1,float* D2,const int32_t*
   vector<support_pt> p_support = computeSupportMatches(desc1.I_desc,desc2.I_desc);
 
   // if not enough support points for triangulation
-  if (p_support.size()<3) {
+  if (p_support.size() < 3) {
     std::cout << "ERROR: Need at least 3 support points!" << std::endl;
-    _mm_free(I1);
-    _mm_free(I2);
+    free(I1);
+    free(I2);
     return;
   }
 
@@ -114,8 +116,8 @@ void Elas::process (uint8_t* I1_,uint8_t* I2_,float* D1,float* D2,const int32_t*
   // release memory
   free(disparity_grid_1);
   free(disparity_grid_2);
-  _mm_free(I1);
-  _mm_free(I2);
+  free(I1);
+  free(I2);
 }
 
 void Elas::removeInconsistentSupportPoints (int16_t* D_can,int32_t D_can_width,int32_t D_can_height) {
@@ -1222,8 +1224,7 @@ void Elas::gapInterpolation(float* D) {
 }
 
 // implements approximation to bilateral filtering
-void Elas::adaptiveMean (float* D) {
-
+void Elas::adaptiveMean(float* D) {
   // get disparity image dimensions
   int32_t D_width          = width;
   int32_t D_height         = height;
@@ -1246,16 +1247,15 @@ void Elas::adaptiveMean (float* D) {
     }
   }
 
-  __m128 xconst0 = _mm_set1_ps(0);
-  __m128 xconst4 = _mm_set1_ps(4);
-  __m128 xval,xweight1,xweight2,xfactor1,xfactor2;
+  float32x4 xconst0 = make_float(0);
+  float32x4 xconst4 = make_float(4);
+  float32x4 xval,xweight1,xweight2,xfactor1,xfactor2;
 
-  float *val     = (float *)_mm_malloc(8*sizeof(float),16);
-  float *weight  = (float*)_mm_malloc(4*sizeof(float),16);
-  float *factor  = (float*)_mm_malloc(4*sizeof(float),16);
+  float *val     = (float *)aligned_alloc(SIZE8, 8*sizeof(float));
+  float *weight  = (float*)aligned_alloc(SIZE8, 4*sizeof(float));
+  float *factor  = (float*)aligned_alloc(SIZE8, 4*sizeof(float));
 
-  // set absolute mask
-  __m128 xabsmask = _mm_set1_ps(0x7FFFFFFF);
+  float32x4 xabsmask = make_float(0x7FFFFFFF);
 
   // when doing subsampling: 4 pixel bilateral filter width
   if (param.subsampling) {
@@ -1274,15 +1274,15 @@ void Elas::adaptiveMean (float* D) {
         float val_curr = *(D_copy+v*D_width+(u-1));
         val[u%4] = *(D_copy+v*D_width+u);
 
-        xval     = _mm_load_ps(val);
-        xweight1 = _mm_sub_ps(xval,_mm_set1_ps(val_curr));
-        xweight1 = _mm_and_ps(xweight1,xabsmask);
-        xweight1 = _mm_sub_ps(xconst4,xweight1);
-        xweight1 = _mm_max_ps(xconst0,xweight1);
-        xfactor1 = _mm_mul_ps(xval,xweight1);
+        xval     = load(val);
+        xweight1 = simdpp::sub(xval, (float32x4)make_float(val_curr));
+        xweight1 = simdpp::bit_and(xweight1, xabsmask);
+        xweight1 = simdpp::sub(xconst4,xweight1);
+        xweight1 = simdpp::max(xconst0,xweight1);
+        xfactor1 = simdpp::mul(xval,xweight1);
 
-        _mm_store_ps(weight,xweight1);
-        _mm_store_ps(factor,xfactor1);
+        store(weight, xweight1);
+        store(factor, xfactor1);
 
         float weight_sum = weight[0]+weight[1]+weight[2]+weight[3];
         float factor_sum = factor[0]+factor[1]+factor[2]+factor[3];
@@ -1308,15 +1308,15 @@ void Elas::adaptiveMean (float* D) {
         float val_curr = *(D_tmp+(v-1)*D_width+u);
         val[v%4] = *(D_tmp+v*D_width+u);
 
-        xval     = _mm_load_ps(val);
-        xweight1 = _mm_sub_ps(xval,_mm_set1_ps(val_curr));
-        xweight1 = _mm_and_ps(xweight1,xabsmask);
-        xweight1 = _mm_sub_ps(xconst4,xweight1);
-        xweight1 = _mm_max_ps(xconst0,xweight1);
-        xfactor1 = _mm_mul_ps(xval,xweight1);
+        xval     = load(val);
+        xweight1 = simdpp::sub(xval, (float32x4)make_float(val_curr));
+        xweight1 = simdpp::bit_and(xweight1,xabsmask);
+        xweight1 = simdpp::sub(xconst4,xweight1);
+        xweight1 = simdpp::max(xconst0,xweight1);
+        xfactor1 = simdpp::mul(xval,xweight1);
 
-        _mm_store_ps(weight,xweight1);
-        _mm_store_ps(factor,xfactor1);
+        store(weight,xweight1);
+        store(factor,xfactor1);
 
         float weight_sum = weight[0]+weight[1]+weight[2]+weight[3];
         float factor_sum = factor[0]+factor[1]+factor[2]+factor[3];
@@ -1346,25 +1346,26 @@ void Elas::adaptiveMean (float* D) {
         float val_curr = *(D_copy+v*D_width+(u-3));
         val[u%8] = *(D_copy+v*D_width+u);
 
-        xval     = _mm_load_ps(val);
-        xweight1 = _mm_sub_ps(xval,_mm_set1_ps(val_curr));
-        xweight1 = _mm_and_ps(xweight1,xabsmask);
-        xweight1 = _mm_sub_ps(xconst4,xweight1);
-        xweight1 = _mm_max_ps(xconst0,xweight1);
-        xfactor1 = _mm_mul_ps(xval,xweight1);
+        float32x4 val_curr1 = make_float(val_curr);
+        xval     = load(val);
+        xweight1 = simdpp::sub(xval, val_curr1);
+        xweight1 = simdpp::bit_and(xweight1,xabsmask);
+        xweight1 = simdpp::sub(xconst4,xweight1);
+        xweight1 = simdpp::max(xconst0,xweight1);
+        xfactor1 = simdpp::mul(xval,xweight1);
 
-        xval     = _mm_load_ps(val+4);
-        xweight2 = _mm_sub_ps(xval,_mm_set1_ps(val_curr));
-        xweight2 = _mm_and_ps(xweight2,xabsmask);
-        xweight2 = _mm_sub_ps(xconst4,xweight2);
-        xweight2 = _mm_max_ps(xconst0,xweight2);
-        xfactor2 = _mm_mul_ps(xval,xweight2);
+        xval     = load(val+4);
+        xweight2 = simdpp::sub(xval, val_curr1);
+        xweight2 = simdpp::bit_and(xweight2,xabsmask);
+        xweight2 = simdpp::sub(xconst4,xweight2);
+        xweight2 = simdpp::max(xconst0,xweight2);
+        xfactor2 = simdpp::mul(xval,xweight2);
 
-        xweight1 = _mm_add_ps(xweight1,xweight2);
-        xfactor1 = _mm_add_ps(xfactor1,xfactor2);
+        xweight1 = simdpp::add(xweight1,xweight2);
+        xfactor1 = simdpp::add(xfactor1,xfactor2);
 
-        _mm_store_ps(weight,xweight1);
-        _mm_store_ps(factor,xfactor1);
+        store(weight,xweight1);
+        store(factor,xfactor1);
 
         float weight_sum = weight[0]+weight[1]+weight[2]+weight[3];
         float factor_sum = factor[0]+factor[1]+factor[2]+factor[3];
@@ -1390,25 +1391,25 @@ void Elas::adaptiveMean (float* D) {
         float val_curr = *(D_tmp+(v-3)*D_width+u);
         val[v%8] = *(D_tmp+v*D_width+u);
 
-        xval     = _mm_load_ps(val);
-        xweight1 = _mm_sub_ps(xval,_mm_set1_ps(val_curr));
-        xweight1 = _mm_and_ps(xweight1,xabsmask);
-        xweight1 = _mm_sub_ps(xconst4,xweight1);
-        xweight1 = _mm_max_ps(xconst0,xweight1);
-        xfactor1 = _mm_mul_ps(xval,xweight1);
+        xval     = load(val);
+        xweight1 = simdpp::sub(xval,(float32x4)make_float(val_curr));
+        xweight1 = simdpp::bit_and(xweight1,xabsmask);
+        xweight1 = simdpp::sub(xconst4,xweight1);
+        xweight1 = simdpp::max(xconst0,xweight1);
+        xfactor1 = simdpp::mul(xval,xweight1);
 
-        xval     = _mm_load_ps(val+4);
-        xweight2 = _mm_sub_ps(xval,_mm_set1_ps(val_curr));
-        xweight2 = _mm_and_ps(xweight2,xabsmask);
-        xweight2 = _mm_sub_ps(xconst4,xweight2);
-        xweight2 = _mm_max_ps(xconst0,xweight2);
-        xfactor2 = _mm_mul_ps(xval,xweight2);
+        xval     = load(val+4);
+        xweight2 = simdpp::sub(xval,(float32x4)make_float(val_curr));
+        xweight2 = simdpp::bit_and(xweight2,xabsmask);
+        xweight2 = simdpp::sub(xconst4,xweight2);
+        xweight2 = simdpp::max(xconst0,xweight2);
+        xfactor2 = simdpp::mul(xval,xweight2);
 
-        xweight1 = _mm_add_ps(xweight1,xweight2);
-        xfactor1 = _mm_add_ps(xfactor1,xfactor2);
+        xweight1 = simdpp::add(xweight1,xweight2);
+        xfactor1 = simdpp::add(xfactor1,xfactor2);
 
-        _mm_store_ps(weight,xweight1);
-        _mm_store_ps(factor,xfactor1);
+        store(weight,xweight1);
+        store(factor,xfactor1);
 
         float weight_sum = weight[0]+weight[1]+weight[2]+weight[3];
         float factor_sum = factor[0]+factor[1]+factor[2]+factor[3];
@@ -1422,9 +1423,9 @@ void Elas::adaptiveMean (float* D) {
   }
 
   // free memory
-  _mm_free(val);
-  _mm_free(weight);
-  _mm_free(factor);
+  free(val);
+  free(weight);
+  free(factor);
   free(D_copy);
   free(D_tmp);
 }

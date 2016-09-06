@@ -5,6 +5,9 @@
 
 namespace elas {
 
+extern const int SIZE16;
+extern const int SIZE8;
+
 void sobel3x3( const uint8_t* in, uint8_t* out_v, uint8_t* out_h, int w, int h );
 
 int sad_u8(const void *a, const void *b);
