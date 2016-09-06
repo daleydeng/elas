@@ -16,7 +16,7 @@ PARTICULAR PURPOSE. See the GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License along with
 libelas; if not, write to the Free Software Foundation, Inc., 51 Franklin
-Street, Fifth Floor, Boston, MA 02110-1301, USA 
+Street, Fifth Floor, Boston, MA 02110-1301, USA
 */
 
 // Demo program showing how libelas can be used, try "./elas -h" for help
@@ -26,6 +26,7 @@ Street, Fifth Floor, Boston, MA 02110-1301, USA
 #include "image.h"
 
 using namespace std;
+using elas::Elas;
 
 // compute disparities of pgm image input pair file_1, file_2
 void process (const char* file_1,const char* file_2) {
@@ -41,11 +42,11 @@ void process (const char* file_1,const char* file_2) {
   if (I1->width()<=0 || I1->height() <=0 || I2->width()<=0 || I2->height() <=0 ||
       I1->width()!=I2->width() || I1->height()!=I2->height()) {
     cout << "ERROR: Images must be of same size, but" << endl;
-    cout << "       I1: " << I1->width() <<  " x " << I1->height() << 
+    cout << "       I1: " << I1->width() <<  " x " << I1->height() <<
                  ", I2: " << I2->width() <<  " x " << I2->height() << endl;
     delete I1;
     delete I2;
-    return;    
+    return;
   }
 
   // get image width and height
@@ -132,5 +133,3 @@ int main (int argc, char** argv) {
 
   return 0;
 }
-
-

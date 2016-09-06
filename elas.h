@@ -9,6 +9,8 @@
 
 #include <stdint.h>
 
+namespace elas {
+
 class Elas {
 
 public:
@@ -183,4 +185,5 @@ private:
   int32_t width,height,bpl;
 };
 
+} // namespace elas
 #endif

@@ -192,10 +192,14 @@ void sobel3x3( const uint8_t* in, uint8_t* out_v, uint8_t* out_h, int w, int h )
   convolve_121_row_3x3_16bit(ph, out_h, w, h);
 }
 
+int sad_u8(const void *a, const void *b)
+{
+  return simdpp::reduce_add(simdpp::abs(simdpp::sub(*(int8x16*)a, *(int8x16*)b)));
+}
+
 void updatePosteriorMinimum(void* I2_block_addr, int32_t d, int32_t w, const void *xmm1_, void *xmm2_, int32_t &val, int32_t &min_val, int32_t &min_d)
 {
-  int8x16 v1 = load(xmm1_), v2 = load(I2_block_addr);
-  val = simdpp::reduce_add(simdpp::abs(simdpp::sub(v1, v2))) + w;
+  val = sad_u8(xmm1_, I2_block_addr)+w;
   if (val < min_val) {
     min_val = val;
     min_d   = d;
