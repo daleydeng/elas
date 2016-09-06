@@ -4,19 +4,28 @@
 #include <algorithm>
 #include <math.h>
 #include <simdpp/simd.h>
+#include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
+#include <CGAL/Delaunay_triangulation_2.h>
+#include <CGAL/Triangulation_vertex_base_with_info_2.h>
 #include "descriptor.hh"
-#include "triangle.h"
 #include "common.hh"
 
 namespace elas {
 
 using std::vector;
+using std::pair;
 using Eigen::Matrix3d;
 using Eigen::Vector3d;
 using simdpp::load;
 using simdpp::uint8x16;
 using simdpp::float32x4;
 using simdpp::make_float;
+
+using Kernel = CGAL::Exact_predicates_inexact_constructions_kernel;
+using Vb = CGAL::Triangulation_vertex_base_with_info_2<int, Kernel>;
+using Tds = CGAL::Triangulation_data_structure_2<Vb>;
+using Delaunay = CGAL::Delaunay_triangulation_2<Kernel, Tds>;
+using Point = Kernel::Point_2;
 
 template<typename T>
 double cond_number(const T &svd)
@@ -397,63 +406,21 @@ vector<Elas::support_pt> Elas::computeSupportMatches (uint8_t* I1_desc,uint8_t* 
 
 vector<Elas::triangle> Elas::computeDelaunayTriangulation (vector<support_pt> p_support,int32_t right_image) {
 
-  // input/output structure for triangulation
-  struct triangulateio in, out;
-  int32_t k;
+  vector<pair<Point, int>> pts;
+  int idx = 0;
+  if (!right_image)
+    for (auto i: p_support)
+      pts.emplace_back(Point(i.u, i.v), idx++);
+  else
+    for (auto i: p_support)
+      pts.emplace_back(Point(i.u - i.d, i.v), idx++);
 
-  // inputs
-  in.numberofpoints = p_support.size();
-  in.pointlist = (float*)malloc(in.numberofpoints*2*sizeof(float));
-  k=0;
-  if (!right_image) {
-    for (int32_t i=0; i<(int)p_support.size(); i++) {
-      in.pointlist[k++] = p_support[i].u;
-      in.pointlist[k++] = p_support[i].v;
-    }
-  } else {
-    for (int32_t i=0; i<(int)p_support.size(); i++) {
-      in.pointlist[k++] = p_support[i].u-p_support[i].d;
-      in.pointlist[k++] = p_support[i].v;
-    }
-  }
-  in.numberofpointattributes = 0;
-  in.pointattributelist      = NULL;
-  in.pointmarkerlist         = NULL;
-  in.numberofsegments        = 0;
-  in.numberofholes           = 0;
-  in.numberofregions         = 0;
-  in.regionlist              = NULL;
-
-  // outputs
-  out.pointlist              = NULL;
-  out.pointattributelist     = NULL;
-  out.pointmarkerlist        = NULL;
-  out.trianglelist           = NULL;
-  out.triangleattributelist  = NULL;
-  out.neighborlist           = NULL;
-  out.segmentlist            = NULL;
-  out.segmentmarkerlist      = NULL;
-  out.edgelist               = NULL;
-  out.edgemarkerlist         = NULL;
-
-  // do triangulation (z=zero-based, n=neighbors, Q=quiet, B=no boundary markers)
-  char parameters[] = "zQB";
-  triangulate(parameters, &in, &out, NULL);
-
-  // put resulting triangles into vector tri
+  Delaunay triangulation;
+  triangulation.insert(pts.begin(), pts.end());
   vector<triangle> tri;
-  k=0;
-  for (int32_t i=0; i<out.numberoftriangles; i++) {
-    tri.push_back(triangle(out.trianglelist[k],out.trianglelist[k+1],out.trianglelist[k+2]));
-    k+=3;
-  }
-
-  // free memory used for triangulation
-  free(in.pointlist);
-  free(out.pointlist);
-  free(out.trianglelist);
-
-  // return triangles
+  for (auto f = triangulation.finite_faces_begin(); f != triangulation.finite_faces_end(); f++)
+    tri.emplace_back(f->vertex(0)->info(), f->vertex(1)->info(),
+                     f->vertex(2)->info());
   return tri;
 }
 

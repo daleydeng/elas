@@ -5,7 +5,7 @@ env.Append(
     LINKFLAGS="-Wl,--unresolved-symbols=ignore-in-shared-libs -Wl,--as-needed",
     CPPPATH=['/usr/local/include', '../include', '/usr/include/eigen3'],
     LIBPATH=['/usr/local/lib', '/usr/local/lib64'],
-    LIBS=['glog']
+    LIBS=['glog', 'CGAL', 'gmp']
 )
 
 Program("elas", Glob("*.cpp")+Glob('*.cc'))
