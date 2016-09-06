@@ -7,7 +7,6 @@
 #include <glog/logging.h>
 #include "common.hh"
 #include <prettyprint.hh>
-#include <emmintrin.h>
 
 namespace elas {
 
@@ -195,10 +194,8 @@ void sobel3x3( const uint8_t* in, uint8_t* out_v, uint8_t* out_h, int w, int h )
 
 void updatePosteriorMinimum(void* I2_block_addr, int32_t d, int32_t w, const void *xmm1_, void *xmm2_, int32_t &val, int32_t &min_val, int32_t &min_d)
 {
-  auto *xmm1 = (__m128i*)xmm1_, *xmm2 = (__m128i*)xmm2_;
-  *xmm2 = _mm_load_si128((__m128i*)I2_block_addr);
-  *xmm2 = _mm_sad_epu8(*xmm1, *xmm2);
-  val  = _mm_extract_epi16(*xmm2, 0)+_mm_extract_epi16(*xmm2, 4) + w;
+  int8x16 v1 = load(xmm1_), v2 = load(I2_block_addr);
+  val = simdpp::reduce_add(simdpp::abs(simdpp::sub(v1, v2))) + w;
   if (val < min_val) {
     min_val = val;
     min_d   = d;
